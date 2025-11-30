@@ -1,0 +1,37 @@
+# Xcode
+DerivedData/
+build/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+
+# Swift Packages
+.swiftpm/
+.build/
+
+# CocoaPods (se usar)
+Pods/
+
+# Carthage (se usar)
+Carthage/Build/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+
+# SwiftPM artifacts
+.xcodeproj/project.xcworkspace/
+.xcodeproj/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Editor / tools
+.vscode/
+.idea/
+
+# Env & secrets
+.env
