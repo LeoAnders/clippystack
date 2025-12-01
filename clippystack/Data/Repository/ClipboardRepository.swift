@@ -5,10 +5,14 @@
 //  Created by Leonardo Anders on 30/11/25.
 //
 
+import Combine
 import Foundation
 
 /// Abstrai operações centrais de histórico do clipboard.
 protocol ClipboardRepository: Sendable {
+    /// Fluxo de itens observável para UI/ViewModels.
+    var itemsPublisher: AnyPublisher<[ClipboardItem], Never> { get }
+
     /// Inicia monitoramento do clipboard e fluxo de atualização interna.
     func startMonitoring()
 
