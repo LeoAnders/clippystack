@@ -120,6 +120,41 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(current.isEmpty)
     }
 
+    func testSelectionNavigationAndFavoriteToggle() async throws {
+        let repo = FakeClipboardRepository(items: [
+            ClipboardItem(content: "First"),
+            ClipboardItem(content: "Second"),
+            ClipboardItem(content: "Third")
+        ])
+        let settingsStore = FakeSettingsStore()
+        let vm = MainWindowViewModel(
+            repository: repo,
+            settingsStore: settingsStore,
+            initialSettings: AppSettings(),
+            debounceInterval: .milliseconds(0),
+            scheduler: .main
+        )
+
+        repo.itemsSubject.send(repo.items)
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        XCTAssertEqual(vm.displayedItems.count, 3)
+        XCTAssertEqual(vm.selectedItem?.content, "First")
+
+        vm.selectNext()
+        XCTAssertEqual(vm.selectedItem?.content, "Second")
+
+        vm.selectPrevious()
+        XCTAssertEqual(vm.selectedItem?.content, "First")
+
+        vm.selectByIndex(2)
+        XCTAssertEqual(vm.selectedItem?.content, "Third")
+
+        vm.toggleFavoriteSelected()
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertTrue(vm.selectedItem?.isFavorite ?? false)
+    }
+
     @MainActor
     func testSettingsViewModelLoadAndSave() async throws {
         let settings = AppSettings(

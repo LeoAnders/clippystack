@@ -57,14 +57,46 @@ final class MainWindowViewModel: ObservableObject {
         }
     }
 
-    func copySelectedAndCloseIfNeeded() {
-        guard let selected = selectedItem else { return }
+    func toggleFavoriteSelected() {
+        guard let selectedItem else { return }
+        toggleFavorite(selectedItem)
+    }
+
+    func copy(_ item: ClipboardItem, closeAfterPaste: Bool) {
         Task {
-            try? await repository.copyToClipboard(selected)
-            if settings.closeAfterPaste {
+            try? await repository.copyToClipboard(item)
+            if closeAfterPaste, settings.closeAfterPaste {
                 onCloseRequested?()
             }
         }
+    }
+
+    func copySelected(closeAfterPaste: Bool) {
+        guard let selectedItem else { return }
+        copy(selectedItem, closeAfterPaste: closeAfterPaste)
+    }
+
+    func copySelectedAndCloseIfNeeded() {
+        copySelected(closeAfterPaste: true)
+    }
+
+    func selectNext() {
+        guard !displayedItems.isEmpty else { return }
+        let currentIndex = displayedItems.firstIndex(where: { $0.id == selectedItem?.id }) ?? -1
+        let nextIndex = min(displayedItems.count - 1, currentIndex + 1)
+        selectedItem = displayedItems[nextIndex]
+    }
+
+    func selectPrevious() {
+        guard !displayedItems.isEmpty else { return }
+        let currentIndex = displayedItems.firstIndex(where: { $0.id == selectedItem?.id }) ?? displayedItems.count
+        let prevIndex = max(0, currentIndex - 1)
+        selectedItem = displayedItems[prevIndex]
+    }
+
+    func selectByIndex(_ index: Int) {
+        guard displayedItems.indices.contains(index) else { return }
+        selectedItem = displayedItems[index]
     }
 
     func clearHistoryRequest() {

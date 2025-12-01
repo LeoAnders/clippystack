@@ -34,6 +34,32 @@ struct ClippystackApp: App {
     var body: some Scene {
         WindowGroup {
             MainWindowView(viewModel: viewModel)
+                .environmentObject(viewModel)
+        }
+        .commands {
+            CommandMenu("Quick Actions") {
+                Button("Focus Search", action: {}) // handled in view via keyboard shortcut
+                    .keyboardShortcut("f", modifiers: [.command])
+
+                Divider()
+
+                Button("Next Item") { viewModel.selectNext() }
+                    .keyboardShortcut("j", modifiers: [.command])
+                Button("Previous Item") { viewModel.selectPrevious() }
+                    .keyboardShortcut("k", modifiers: [.command])
+
+                Divider()
+
+                Button("Toggle Favorite") { viewModel.toggleFavoriteSelected() }
+                    .keyboardShortcut("d", modifiers: [.command])
+
+                Button("Copy") { viewModel.copySelected(closeAfterPaste: false) }
+                    .keyboardShortcut("c", modifiers: [.command])
+                Button("Copy + Close") { viewModel.copySelected(closeAfterPaste: true) }
+                    .keyboardShortcut(.return, modifiers: [.command])
+
+                Divider()
+            }
         }
     }
 }
