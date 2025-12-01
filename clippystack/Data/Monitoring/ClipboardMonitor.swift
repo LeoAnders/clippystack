@@ -109,7 +109,7 @@ final class ClipboardMonitor {
         }
 
         lastContent = rawContent
-        let item = ClipboardItem(content: rawContent, capturedAt: Date(), type: .text)
+        let item = ClipboardItem(capturedAt: Date(), content: rawContent, type: .text)
         subject.send(item)
     }
 }

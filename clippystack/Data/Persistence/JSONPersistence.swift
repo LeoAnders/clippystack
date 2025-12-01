@@ -14,7 +14,7 @@ protocol ClipboardPersistence: Sendable {
 }
 
 /// Persistência local em arquivos JSON para histórico e configurações.
-actor JSONPersistence: ClipboardPersistence, SettingsStore {
+final class JSONPersistence: ClipboardPersistence, SettingsStore {
     private let fileManager: FileManager
     private let historyURL: URL
     private let settingsURL: URL

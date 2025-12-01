@@ -9,6 +9,7 @@ import Combine
 import XCTest
 @testable import clippystack
 
+@MainActor
 final class ViewModelTests: XCTestCase {
     private var cancellables: Set<AnyCancellable> = []
 
@@ -119,6 +120,7 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(current.isEmpty)
     }
 
+    @MainActor
     func testSettingsViewModelLoadAndSave() async throws {
         let settings = AppSettings(
             historyLimit: 50,

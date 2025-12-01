@@ -5,6 +5,7 @@
 //  Created by Leonardo Anders on 01/12/25.
 //
 
+import Combine
 import Foundation
 
 protocol LaunchAtLoginManaging: Sendable {
