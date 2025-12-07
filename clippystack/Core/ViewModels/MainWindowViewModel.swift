@@ -8,12 +8,21 @@
 import Combine
 import Foundation
 
-/// Controla a lista exibida, seleção e ações da janela principal.
+enum ClipboardFilterScope: String, CaseIterable, Identifiable {
+    case all
+    case favorites
+    case text
+    case images
+    case links
+
+    var id: String { rawValue }
+}
+
 @MainActor
 final class MainWindowViewModel: ObservableObject {
     @Published var displayedItems: [ClipboardItem] = []
     @Published var searchQuery: String = ""
-    @Published var favoriteFilter: Bool = false
+    @Published var filterScope: ClipboardFilterScope = .all
     @Published var selectedItem: ClipboardItem?
     @Published var isPreviewVisible: Bool = true
 
@@ -43,7 +52,7 @@ final class MainWindowViewModel: ObservableObject {
         bind()
     }
 
-    /// Inicia monitoramento e carrega histórico + settings.
+    /// Starts monitoring and loads history + settings.
     func onAppear() {
         Task {
             await self.loadSettingsAndHistory()
@@ -131,7 +140,7 @@ final class MainWindowViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        $favoriteFilter
+        $filterScope
             .sink { [weak self] _ in
                 self?.applyFilters()
             }
@@ -153,8 +162,17 @@ final class MainWindowViewModel: ObservableObject {
     private func applyFilters() {
         var filtered = baseItems
 
-        if favoriteFilter {
+        switch filterScope {
+        case .favorites:
             filtered = filtered.filter { $0.isFavorite }
+        case .text:
+            filtered = filtered.filter { $0.type == .text }
+        case .images:
+            filtered = filtered.filter { $0.type == .image }
+        case .links:
+            filtered = filtered.filter { $0.type == .link }
+        case .all:
+            break
         }
 
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)

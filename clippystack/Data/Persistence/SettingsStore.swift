@@ -7,11 +7,11 @@
 
 import Foundation
 
-/// Armazena e recupera configurações do aplicativo.
+/// Stores and retrieves app settings.
 protocol SettingsStore: Sendable {
-    /// Carrega `AppSettings`, aplicando defaults quando necessário.
+    /// Loads `AppSettings`, applying defaults when necessary.
     func load() async throws -> AppSettings
 
-    /// Persiste as configurações fornecidas.
+    /// Persists the provided settings.
     func save(_ settings: AppSettings) async throws
 }

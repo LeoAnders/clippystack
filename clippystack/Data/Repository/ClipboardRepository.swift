@@ -8,26 +8,26 @@
 import Combine
 import Foundation
 
-/// Abstrai operações centrais de histórico do clipboard.
+/// Abstracts core clipboard history operations.
 protocol ClipboardRepository: Sendable {
-    /// Fluxo de itens observável para UI/ViewModels.
+    /// Observable stream of items for UI/ViewModels.
     var itemsPublisher: AnyPublisher<[ClipboardItem], Never> { get }
 
-    /// Inicia monitoramento do clipboard e fluxo de atualização interna.
+    /// Starts clipboard monitoring and the internal update pipeline.
     func startMonitoring()
 
-    /// Recupera o estado atual do histórico em memória.
+    /// Retrieves the current in-memory history state.
     func currentItems() async -> [ClipboardItem]
 
-    /// Persiste e retorna o histórico mais recente do armazenamento.
+    /// Persists and returns the latest history from storage.
     func reloadHistory() async throws -> [ClipboardItem]
 
-    /// Marca/desmarca favorito e retorna o item atualizado se existir.
+    /// Toggles favorite and returns the updated item if present.
     func toggleFavorite(id: UUID) async throws -> ClipboardItem?
 
-    /// Remove todos os itens do histórico e persiste a mudança.
+    /// Removes all history items and persists the change.
     func clearHistory() async throws
 
-    /// Copia um item selecionado de volta para o clipboard do sistema.
+    /// Copies a selected item back to the system clipboard.
     func copyToClipboard(_ item: ClipboardItem) async throws
 }

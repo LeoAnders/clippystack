@@ -7,13 +7,13 @@
 
 import Foundation
 
-/// Persistência de histórico de clipboard.
+/// Clipboard history persistence.
 protocol ClipboardPersistence: Sendable {
     func loadHistory() async throws -> [ClipboardItem]
     func saveHistory(_ items: [ClipboardItem], settings: AppSettings) async throws
 }
 
-/// Persistência local em arquivos JSON para histórico e configurações.
+/// Local JSON-backed persistence for history and settings.
 final class JSONPersistence: ClipboardPersistence, SettingsStore {
     private let fileManager: FileManager
     private let historyURL: URL
@@ -45,7 +45,7 @@ final class JSONPersistence: ClipboardPersistence, SettingsStore {
             guard !data.isEmpty else { return [] }
             return try decoder.decode([ClipboardItem].self, from: data)
         } catch {
-            // Arquivo corrompido ou formato inesperado: retornar vazio.
+            // Corrupted file or unexpected format: return empty history.
             return []
         }
     }
@@ -68,7 +68,7 @@ final class JSONPersistence: ClipboardPersistence, SettingsStore {
             guard !data.isEmpty else { return AppSettings() }
             return try decoder.decode(AppSettings.self, from: data)
         } catch {
-            // Arquivo corrompido: retornar defaults.
+            // Corrupted settings file: return defaults.
             return AppSettings()
         }
     }

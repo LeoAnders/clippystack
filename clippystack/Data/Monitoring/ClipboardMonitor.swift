@@ -9,13 +9,13 @@ import AppKit
 import Combine
 import Foundation
 
-/// Abstração fina sobre `NSPasteboard` para permitir teste e troca de implementação.
+/// Thin abstraction over `NSPasteboard` to enable testing and swapping implementations.
 protocol PasteboardAdapter: Sendable {
     var changeCount: Int { get }
     func string(forType type: NSPasteboard.PasteboardType) -> String?
 }
 
-/// Adaptador padrão que usa `NSPasteboard.general`.
+/// Default adapter backed by `NSPasteboard.general`.
 final class SystemPasteboardAdapter: PasteboardAdapter {
     private let pasteboard: NSPasteboard
 
@@ -32,7 +32,7 @@ final class SystemPasteboardAdapter: PasteboardAdapter {
     }
 }
 
-/// Monitora alterações no `NSPasteboard` e publica itens de texto únicos.
+/// Monitors `NSPasteboard` changes and publishes unique text items.
 final class ClipboardMonitor {
     private let pasteboard: PasteboardAdapter
     private let queue: DispatchQueue
@@ -42,7 +42,7 @@ final class ClipboardMonitor {
     private var timer: DispatchSourceTimer?
     private let subject = PassthroughSubject<ClipboardItem, Never>()
 
-    /// Combine publisher para novos itens de clipboard.
+    /// Combine publisher for new clipboard items.
     var publisher: AnyPublisher<ClipboardItem, Never> {
         subject.eraseToAnyPublisher()
     }
@@ -58,7 +58,7 @@ final class ClipboardMonitor {
         self.lastChangeCount = pasteboard.changeCount
     }
 
-    /// Inicia o timer para varrer o pasteboard.
+    /// Starts the timer to poll the pasteboard.
     func start() {
         guard timer == nil else { return }
 
@@ -71,13 +71,13 @@ final class ClipboardMonitor {
         self.timer = timer
     }
 
-    /// Interrompe o timer ativo.
+    /// Stops the active timer.
     func stop() {
         timer?.cancel()
         timer = nil
     }
 
-    /// Cria um `AsyncStream` que reflete o mesmo fluxo do publisher Combine.
+    /// Creates an `AsyncStream` that mirrors the Combine publisher.
     func makeAsyncStream() -> AsyncStream<ClipboardItem> {
         AsyncStream { continuation in
             let cancellable = subject.sink { continuation.yield($0) }
@@ -87,7 +87,7 @@ final class ClipboardMonitor {
         }
     }
 
-    /// Realiza uma varredura imediata. Exposta para testes e para uso sem timer.
+    /// Performs an immediate scan; exposed for tests and manual polling.
     func pollPasteboard() {
         let currentChangeCount = pasteboard.changeCount
         guard currentChangeCount != lastChangeCount else {
@@ -109,7 +109,19 @@ final class ClipboardMonitor {
         }
 
         lastContent = rawContent
-        let item = ClipboardItem(capturedAt: Date(), content: rawContent, type: .text)
+        let item = ClipboardItem(
+            capturedAt: Date(),
+            content: rawContent,
+            type: determineContentType(from: rawContent)
+        )
         subject.send(item)
+    }
+
+    private func determineContentType(from string: String) -> ClipboardContentType {
+        // Placeholder for richer detection (images/files); current monitor only reads text.
+        if let url = URL(string: string), url.scheme != nil {
+            return .link
+        }
+        return .text
     }
 }

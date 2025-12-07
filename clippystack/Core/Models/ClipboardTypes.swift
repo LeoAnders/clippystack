@@ -10,6 +10,9 @@ import Foundation
 /// Supported clipboard content categories.
 enum ClipboardContentType: String, Codable, Sendable {
     case text
+    case image
+    case link
+    case other
 }
 
 /// Metadata attached to clipboard items (kept small but extensible).

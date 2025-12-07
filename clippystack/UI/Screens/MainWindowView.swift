@@ -6,13 +6,15 @@
 //
 
 import SwiftUI
+import AppKit
 
-/// UI estilo ClipBook/Raycast com busca + filtro no topo do painel esquerdo
-/// e ações no topo do painel direito.
+/// ClipBook/Raycast-style UI with search + filter at the top of the left panel
+/// and actions at the top of the right panel.
 struct MainWindowView: View {
     @ObservedObject var viewModel: MainWindowViewModel
     @State private var selection: UUID?
     @FocusState private var isSearchFocused: Bool
+    @State private var windowConfigured: Bool = false
 
     private let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -27,32 +29,24 @@ struct MainWindowView: View {
         return f
     }()
 
-    var body: some View {
-        ZStack {
-            // Deixa o fundo da janela transparente para usar o blur do próprio macOS
-            Color.clear.ignoresSafeArea()
+    // Global corner radius for the card/window
+    private let windowCornerRadius: CGFloat = 10
 
+    var body: some View {
+        let cardShape = RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous)
+
+        return ZStack {
             HStack(spacing: 0) {
-                // MARK: - COLUNA ESQUERDA (header + lista)
                 VStack(spacing: 0) {
                     leftHeader()
                     leftPanel()
                 }
                 .frame(
-                    minWidth: 260,
-                    idealWidth: 300,
-                    maxWidth: viewModel.isPreviewVisible ? 340 : .infinity
-                )
-                .frame(maxHeight: .infinity)
-                .background(
-                    .ultraThinMaterial.opacity(0.55) // mais transparente
-                )
-                .overlay(
-                    Color.white.opacity(0.02)
-                        .allowsHitTesting(false)      // não bloqueia cliques
+                    minWidth: 280,
+                    idealWidth: 320,
+                    maxWidth: viewModel.isPreviewVisible ? 360 : .infinity
                 )
 
-                // MARK: - DIVISOR + COLUNA DIREITA
                 if viewModel.isPreviewVisible {
                     verticalDivider()
 
@@ -61,24 +55,18 @@ struct MainWindowView: View {
                         rightPanel()
                     }
                     .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
-                    .background(
-                        .ultraThinMaterial.opacity(0.60) // mais transparente também
-                    )
-                    .overlay(
-                        LinearGradient(
-                            colors: [
-                                Color.black.opacity(0.14),
-                                Color.black.opacity(0.09)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .allowsHitTesting(false)       // não intercepta eventos
-                    )
                 }
             }
+            .padding(12)
         }
-        .frame(minWidth: 760, minHeight: 460)
+        // Single glass-like plate, Raycast style
+        .background(
+            cardShape
+                .fill(.ultraThinMaterial)
+        )
+        .clipShape(cardShape)
+        .shadow(color: Color.black.opacity(0.28), radius: 20, x: 0, y: 16)
+        .frame(minWidth: 780, minHeight: 480)
         .onAppear {
             viewModel.onAppear()
             isSearchFocused = true
@@ -86,91 +74,66 @@ struct MainWindowView: View {
         .onReceive(viewModel.$selectedItem) { item in
             selection = item?.id
         }
+        .background(WindowConfigurator(configured: $windowConfigured))
     }
 
     // MARK: - Vertical divider
 
     private func verticalDivider() -> some View {
         Rectangle()
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.04),
-                        Color.white.opacity(0.18),
-                        Color.white.opacity(0.04)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            .fill(Color.white.opacity(0.12))
             .frame(width: 1)
+            .frame(maxHeight: .infinity)
     }
 
     // MARK: - Left Header (search + filtros)
 
     @ViewBuilder
     private func leftHeader() -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            RaycastSearchField(
+                query: Binding(
+                    get: { viewModel.searchQuery },
+                    set: { viewModel.searchQuery = $0 }
+                ),
+                scope: Binding(
+                    get: { viewModel.filterScope },
+                    set: { viewModel.filterScope = $0 }
+                ),
+                isFocused: $isSearchFocused
+            )
 
-                    TextField(
-                        "Type to search...",
-                        text: Binding(
-                            get: { viewModel.searchQuery },
-                            set: { viewModel.searchQuery = $0 }
-                        )
-                    )
-                    .textFieldStyle(.plain)
-                    .focused($isSearchFocused)
-                    .keyboardShortcut("f", modifiers: [.command])
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.05))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                )
+            HStack(spacing: 10) {
+                Text("\(viewModel.displayedItems.count) items")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.7))
+
+                Spacer()
 
                 if !viewModel.isPreviewVisible {
                     Button {
                         viewModel.togglePreview()
                     } label: {
-                        Image(systemName: "sidebar.right")
-                            .foregroundColor(.white.opacity(0.8))
+                        Label("Show preview", systemImage: "sidebar.right")
+                            .labelStyle(.iconOnly)
+                            .foregroundColor(.white.opacity(0.85))
                     }
                     .buttonStyle(.borderless)
                     .help("Show preview")
                 }
             }
-
-            Picker("", selection: Binding(
-                get: { viewModel.favoriteFilter },
-                set: { viewModel.favoriteFilter = $0 }
-            )) {
-                Label("All", systemImage: "line.3.horizontal").tag(false)
-                Label("Favorites", systemImage: "star").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 190)
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.horizontal, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 
-    // MARK: - Right Header (ações do preview)
+    // MARK: - Right Header (preview actions)
 
     @ViewBuilder
     private func rightHeader() -> some View {
         HStack {
-            // canto superior ESQUERDO: copy + favorite
+            // Top-left: copy + favorite
             HStack(spacing: 10) {
                 Button {
                     viewModel.copySelected(closeAfterPaste: false)
@@ -195,7 +158,7 @@ struct MainWindowView: View {
 
             Spacer()
 
-            // canto superior DIREITO: sidebar + trash
+            // Top-right: sidebar + trash
             HStack(spacing: 10) {
                 Button {
                     viewModel.togglePreview()
@@ -225,52 +188,51 @@ struct MainWindowView: View {
 
     @ViewBuilder
     private func leftPanel() -> some View {
-        List(selection: Binding(
-            get: { selection },
-            set: { newValue in
-                selection = newValue
-                if let id = newValue,
-                   let item = viewModel.displayedItems.first(where: { $0.id == id }) {
-                    viewModel.selectedItem = item
+        ScrollView(showsIndicators: false) {
+            LazyVStack(spacing: 10) {
+                ForEach(Array(viewModel.displayedItems.enumerated()), id: \.element.id) { _, item in
+                    listRow(item: item)
+                        .tag(item.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selection = item.id
+                            viewModel.selectedItem = item
+                        }
+                        .contextMenu {
+                            Button("Copy") {
+                                viewModel.selectedItem = item
+                                viewModel.copy(item, closeAfterPaste: false)
+                            }
+                            Button(item.isFavorite ? "Remove favorite" : "Add favorite") {
+                                viewModel.toggleFavorite(item)
+                            }
+                        }
                 }
             }
-        )) {
-            ForEach(Array(viewModel.displayedItems.enumerated()), id: \.element.id) { _, item in
-                listRow(item: item)
-                    .tag(item.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        selection = item.id
-                        viewModel.selectedItem = item
-                    }
-                    .contextMenu {
-                        Button("Copy") {
-                            viewModel.selectedItem = item
-                            viewModel.copy(item, closeAfterPaste: false)
-                        }
-                        Button(item.isFavorite ? "Remove favorite" : "Add favorite") {
-                            viewModel.toggleFavorite(item)
-                        }
-                    }
-            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .scrollIndicators(.hidden)
+        .background(Color.clear)
     }
 
     private func listRow(item: ClipboardItem) -> some View {
         let isSelected = selection == item.id
+        let typeIcon = icon(for: item.type)
 
-        return HStack(spacing: 10) {
-            Image(systemName: "doc.text")
-                .foregroundColor(.white.opacity(isSelected ? 0.95 : 0.75))
-                .font(.system(size: 14))
+        return HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+                Image(systemName: typeIcon)
+                    .foregroundColor(.white.opacity(isSelected ? 0.95 : 0.75))
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .frame(width: 36, height: 36)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(makeSnippet(for: item.content))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.95))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.96))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -289,8 +251,12 @@ struct MainWindowView: View {
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isSelected ? Color.white.opacity(0.12) : Color.clear)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isSelected ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(isSelected ? Color.white.opacity(0.18) : Color.clear, lineWidth: 1)
+                )
         )
     }
 
@@ -300,38 +266,42 @@ struct MainWindowView: View {
     private func rightPanel() -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if let selected = viewModel.selectedItem {
-                // Conteúdo
                 ScrollView {
                     Text(selected.content)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(.body, design: .rounded))
+                        .foregroundColor(.white.opacity(0.95))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.white.opacity(0.05))
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
                 }
 
-                // Linha separadora acima do bottom
                 bottomDivider()
 
-                // Metadados no rodapé, incluindo Copy time
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 8) {
                     metadataRow(label: "Application", value: selected.metadata.sourceAppName ?? "Unknown")
                     metadataRow(label: "Bundle", value: selected.metadata.sourceBundleIdentifier ?? "—")
-                    metadataRow(label: "Type", value: "Text")
+                    metadataRow(label: "Type", value: displayLabel(for: selected.type))
                     metadataRow(label: "Copy time", value: copyTimeFormatter.string(from: selected.capturedAt))
                 }
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 12)
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.75))
+                .padding(.horizontal, 14)
                 .padding(.top, 6)
-                .padding(.bottom, 10)
+                .padding(.bottom, 12)
             } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "text.alignleft")
-                        .font(.system(size: 32))
-                        .foregroundColor(.secondary)
+                VStack(spacing: 10) {
+                    Image(systemName: "square.dashed.inset.filled")
+                        .font(.system(size: 34, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
                     Text("Select an item")
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.65))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
@@ -342,7 +312,8 @@ struct MainWindowView: View {
         Rectangle()
             .fill(Color.white.opacity(0.08))
             .frame(height: 1)
-            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 0)
             .padding(.top, 4)
     }
 
@@ -353,13 +324,6 @@ struct MainWindowView: View {
         return "\(content.prefix(maxLength))…"
     }
 
-    private func shortTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-
     @ViewBuilder
     private func metadataRow(label: String, value: String) -> some View {
         HStack {
@@ -367,5 +331,165 @@ struct MainWindowView: View {
                 .bold()
             Text(value)
         }
+    }
+
+    private func icon(for type: ClipboardContentType) -> String {
+        switch type {
+        case .text:
+            return "text.alignleft"
+        case .image:
+            return "photo"
+        case .link:
+            return "link"
+        case .other:
+            return "square.on.square"
+        }
+    }
+
+    private func displayLabel(for type: ClipboardContentType) -> String {
+        switch type {
+        case .text:
+            return "Text"
+        case .image:
+            return "Image"
+        case .link:
+            return "Link"
+        case .other:
+            return "Other"
+        }
+    }
+}
+
+/// Search field styled to mimic Raycast's unified bar with inline type selector.
+private struct RaycastSearchField: View {
+    @Binding var query: String
+    @Binding var scope: ClipboardFilterScope
+    @FocusState.Binding var isFocused: Bool
+
+    private let cornerRadius: CGFloat = 10
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.white.opacity(0.7))
+                .font(.system(size: 15, weight: .semibold))
+
+            TextField("Search clips...", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundColor(.white)
+                .focused($isFocused)
+                .keyboardShortcut("f", modifiers: [.command])
+
+            Rectangle()
+                .fill(Color.white.opacity(0.08))
+                .frame(width: 1, height: 20)
+
+            Menu {
+                ForEach(ClipboardFilterScope.allCases) { option in
+                    Button {
+                        scope = option
+                    } label: {
+                        Label(option.title, systemImage: option.icon)
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: scope.icon)
+                    Text(scope.title)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.06), in: Capsule())
+            }
+            .menuStyle(.borderlessButton)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+        )
+        // No external stroke to avoid a heavy border
+        .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 6)
+    }
+}
+
+private extension ClipboardFilterScope {
+    var title: String {
+        switch self {
+        case .all:
+            return "All"
+        case .favorites:
+            return "Favorites"
+        case .text:
+            return "Text"
+        case .images:
+            return "Images"
+        case .links:
+            return "Links"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all:
+            return "line.3.horizontal.decrease"
+        case .favorites:
+            return "star"
+        case .text:
+            return "text.alignleft"
+        case .images:
+            return "photo"
+        case .links:
+            return "link"
+        }
+    }
+}
+
+/// Hides/configures the macOS window for the Raycast-style floating card.
+private struct WindowConfigurator: NSViewRepresentable {
+    @Binding var configured: Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            configure(view.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            configure(nsView.window)
+        }
+    }
+
+    private func configure(_ window: NSWindow?) {
+        guard let window, !configured else { return }
+        configured = true
+
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+
+        // Borderless window with content filling the area
+        window.styleMask = [
+            .borderless,
+            .fullSizeContentView,
+            .resizable
+        ]
+
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false            // shadow comes only from the SwiftUI card
+        window.isMovableByWindowBackground = true
+
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
     }
 }

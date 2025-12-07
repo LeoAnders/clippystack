@@ -15,7 +15,7 @@ struct ClippystackApp: App {
     init() {
         let persistence = (try? JSONPersistence())
             ?? (try? JSONPersistence(baseDirectory: FileManager.default.temporaryDirectory))
-            ?? { fatalError("Não foi possível inicializar JSONPersistence") }()
+            ?? { fatalError("Could not initialize JSONPersistence") }()
 
         let repository = ClipboardRepositoryImpl(
             monitor: ClipboardMonitor(),
@@ -36,6 +36,7 @@ struct ClippystackApp: App {
             MainWindowView(viewModel: viewModel)
                 .environmentObject(viewModel)
         }
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandMenu("Quick Actions") {
                 Button("Focus Search", action: {}) // handled in view via keyboard shortcut

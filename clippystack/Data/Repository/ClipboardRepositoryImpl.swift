@@ -9,12 +9,12 @@ import AppKit
 import Combine
 import Foundation
 
-/// Serviço de cópia de volta para o `NSPasteboard`.
+/// Copy service that writes back to `NSPasteboard`.
 protocol CopyService {
     func copy(_ item: ClipboardItem) async throws
 }
 
-/// Implementação padrão que escreve strings no pasteboard do sistema.
+/// Default implementation that writes strings to the system pasteboard.
 final class SystemCopyService: CopyService {
     func copy(_ item: ClipboardItem) async throws {
         let pasteboard = NSPasteboard.general
@@ -23,7 +23,7 @@ final class SystemCopyService: CopyService {
     }
 }
 
-/// Permite mocks de monitor em testes.
+/// Allows monitor mocks in tests.
 protocol ClipboardMonitorType {
     var publisher: AnyPublisher<ClipboardItem, Never> { get }
     func start()
@@ -31,7 +31,7 @@ protocol ClipboardMonitorType {
 
 extension ClipboardMonitor: ClipboardMonitorType {}
 
-/// Armazena e manipula histórico de forma thread-safe.
+/// Stores and manages history in a thread-safe manner.
 actor ClipboardHistoryStore {
     private var items: [ClipboardItem] = []
 
@@ -97,7 +97,7 @@ actor ClipboardHistoryStore {
     }
 }
 
-/// Implementação concreta de `ClipboardRepository` integrando monitor, persistência e cópia.
+/// Concrete `ClipboardRepository` integrating monitor, persistence, and copy services.
 final class ClipboardRepositoryImpl: ClipboardRepository {
     private let monitor: ClipboardMonitorType
     private let persistence: (ClipboardPersistence & SettingsStore)

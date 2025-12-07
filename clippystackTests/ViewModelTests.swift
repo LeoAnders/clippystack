@@ -50,7 +50,7 @@ final class ViewModelTests: XCTestCase {
         waitForExpectations(timeout: 1)
     }
 
-    func testFavoriteFilterShowsOnlyFavorites() {
+    func testFavoritesScopeShowsOnlyFavorites() {
         let repo = FakeClipboardRepository()
         let settingsStore = FakeSettingsStore()
         let vm = MainWindowViewModel(
@@ -66,10 +66,48 @@ final class ViewModelTests: XCTestCase {
             ClipboardItem(content: "B", isFavorite: true)
         ])
 
-        vm.favoriteFilter = true
+        vm.filterScope = .favorites
 
         XCTAssertEqual(vm.displayedItems.count, 1)
         XCTAssertEqual(vm.displayedItems.first?.content, "B")
+    }
+
+    func testScopeFiltersByTypeAndKeepsSelectionNavigation() async throws {
+        let repo = FakeClipboardRepository()
+        let settingsStore = FakeSettingsStore()
+        let vm = MainWindowViewModel(
+            repository: repo,
+            settingsStore: settingsStore,
+            initialSettings: AppSettings(),
+            debounceInterval: .milliseconds(0),
+            scheduler: .main
+        )
+
+        repo.itemsSubject.send([
+            ClipboardItem(content: "Text A", type: .text),
+            ClipboardItem(content: "Image B", type: .image),
+            ClipboardItem(content: "Link C", type: .link),
+            ClipboardItem(content: "Text D", type: .text)
+        ])
+
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        vm.filterScope = .text
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        XCTAssertEqual(vm.displayedItems.map(\.content), ["Text A", "Text D"])
+        XCTAssertEqual(vm.selectedItem?.content, "Text A")
+
+        vm.selectNext()
+        XCTAssertEqual(vm.selectedItem?.content, "Text D")
+        vm.selectPrevious()
+        XCTAssertEqual(vm.selectedItem?.content, "Text A")
+
+        vm.filterScope = .link
+        try await Task.sleep(nanoseconds: 10_000_000)
+        XCTAssertEqual(vm.displayedItems.map(\.content), ["Link C"])
+        vm.selectNext()
+        XCTAssertEqual(vm.selectedItem?.content, "Link C")
     }
 
     func testCopySelectedTriggersCloseWhenEnabled() async throws {

@@ -13,13 +13,13 @@ protocol LaunchAtLoginManaging: Sendable {
     func setEnabled(_ enabled: Bool) async throws
 }
 
-/// Fallback que não altera login; útil para testes/ambiente sem implementação real.
+/// Fallback that does not change login; useful for tests or environments without a real implementation.
 struct NoopLaunchAtLoginManager: LaunchAtLoginManaging {
     func isEnabled() async -> Bool { false }
     func setEnabled(_ enabled: Bool) async throws { _ = enabled }
 }
 
-/// ViewModel para tela de configurações.
+/// ViewModel for the settings screen.
 @MainActor
 final class SettingsViewModel: ObservableObject {
     @Published var historyLimit: Int = AppSettings().historyLimit
