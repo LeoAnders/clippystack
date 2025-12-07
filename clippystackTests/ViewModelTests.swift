@@ -158,6 +158,64 @@ final class ViewModelTests: XCTestCase {
         XCTAssertTrue(current.isEmpty)
     }
 
+    func testShowFooterStatusAutoHides() async throws {
+        let repo = FakeClipboardRepository()
+        let settingsStore = FakeSettingsStore()
+        let vm = MainWindowViewModel(
+            repository: repo,
+            settingsStore: settingsStore,
+            initialSettings: AppSettings(),
+            debounceInterval: .milliseconds(0),
+            scheduler: .main
+        )
+
+        vm.showFooterStatus(FooterStatus(message: "Hello", kind: .success), autoHideAfter: 0.05)
+        XCTAssertEqual(vm.footerStatus?.message, "Hello")
+
+        try await Task.sleep(nanoseconds: 120_000_000)
+        XCTAssertNil(vm.footerStatus)
+    }
+
+    func testDeletePublishesSuccessStatus() async throws {
+        let item = ClipboardItem(content: "Remove me")
+        let repo = FakeClipboardRepository(items: [item])
+        let settingsStore = FakeSettingsStore()
+        let vm = MainWindowViewModel(
+            repository: repo,
+            settingsStore: settingsStore,
+            initialSettings: AppSettings(),
+            debounceInterval: .milliseconds(0),
+            scheduler: .main
+        )
+
+        repo.itemsSubject.send(repo.items)
+        vm.delete(item)
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(vm.footerStatus?.kind, .success)
+        XCTAssertEqual(vm.footerStatus?.message, "Deleted entry")
+    }
+
+    func testClearHistoryErrorShowsFooterStatus() async throws {
+        let repo = FakeClipboardRepository(items: [ClipboardItem(content: "A")])
+        let settingsStore = FakeSettingsStore()
+        repo.clearError = StubError(message: "boom")
+
+        let vm = MainWindowViewModel(
+            repository: repo,
+            settingsStore: settingsStore,
+            initialSettings: AppSettings(),
+            debounceInterval: .milliseconds(0),
+            scheduler: .main
+        )
+
+        vm.clearHistoryRequest()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(vm.footerStatus?.kind, .error)
+        XCTAssertEqual(vm.footerStatus?.message, "boom")
+    }
+
     func testSelectionNavigationAndFavoriteToggle() async throws {
         let repo = FakeClipboardRepository(items: [
             ClipboardItem(content: "First"),
@@ -234,6 +292,10 @@ private final class FakeClipboardRepository: ClipboardRepository, @unchecked Sen
     }
     private(set) var copiedItems: [ClipboardItem] = []
     private(set) var started = false
+    var clearError: Error?
+    var deleteError: Error?
+    var toggleFavoriteError: Error?
+    var copyError: Error?
 
     var itemsPublisher: AnyPublisher<[ClipboardItem], Never> {
         itemsSubject.eraseToAnyPublisher()
@@ -258,6 +320,9 @@ private final class FakeClipboardRepository: ClipboardRepository, @unchecked Sen
     }
 
     func toggleFavorite(id: UUID) async throws -> ClipboardItem? {
+        if let toggleFavoriteError {
+            throw toggleFavoriteError
+        }
         guard let index = items.firstIndex(where: { $0.id == id }) else { return nil }
         var item = items[index]
         item.isFavorite.toggle()
@@ -265,13 +330,35 @@ private final class FakeClipboardRepository: ClipboardRepository, @unchecked Sen
         return item
     }
 
+    func delete(id: UUID) async throws {
+        if let deleteError {
+            throw deleteError
+        }
+        items.removeAll { $0.id == id }
+    }
+
     func clearHistory() async throws {
+        if let clearError {
+            throw clearError
+        }
         items.removeAll()
     }
 
+    func clearNonFavorites() async throws {
+        items = items.filter { $0.isFavorite }
+    }
+
     func copyToClipboard(_ item: ClipboardItem) async throws {
+        if let copyError {
+            throw copyError
+        }
         copiedItems.append(item)
     }
+}
+
+private struct StubError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
 
 private actor FakeSettingsStore: SettingsStore {

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 @main
 @MainActor
@@ -23,12 +24,15 @@ struct ClippystackApp: App {
             copyService: SystemCopyService()
         )
 
-        _viewModel = StateObject(
-            wrappedValue: MainWindowViewModel(
-                repository: repository,
-                settingsStore: persistence
-            )
+        let vm = MainWindowViewModel(
+            repository: repository,
+            settingsStore: persistence
         )
+        vm.onCloseRequested = {
+            NSApp.hide(nil)
+        }
+
+        _viewModel = StateObject(wrappedValue: vm)
     }
 
     var body: some Scene {

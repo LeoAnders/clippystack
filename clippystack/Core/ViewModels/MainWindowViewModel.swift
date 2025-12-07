@@ -7,6 +7,9 @@
 
 import Combine
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 
 enum ClipboardFilterScope: String, CaseIterable, Identifiable {
     case all
@@ -18,6 +21,19 @@ enum ClipboardFilterScope: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+struct FooterStatus: Identifiable, Equatable, Sendable {
+    enum Kind: String, Sendable {
+        case success
+        case warning
+        case error
+    }
+
+    let id = UUID()
+    let message: String
+    let kind: Kind
+    let timestamp: Date = Date()
+}
+
 @MainActor
 final class MainWindowViewModel: ObservableObject {
     @Published var displayedItems: [ClipboardItem] = []
@@ -25,6 +41,11 @@ final class MainWindowViewModel: ObservableObject {
     @Published var filterScope: ClipboardFilterScope = .all
     @Published var selectedItem: ClipboardItem?
     @Published var isPreviewVisible: Bool = true
+    @Published var footerStatus: FooterStatus?
+    #if canImport(AppKit)
+    @Published var pasteTargetAppName: String = "App"
+    @Published var pasteTargetAppIcon: NSImage?
+    #endif
 
     var onCloseRequested: (() -> Void)?
 
@@ -35,6 +56,10 @@ final class MainWindowViewModel: ObservableObject {
     private let scheduler: DispatchQueue
     private var baseItems: [ClipboardItem] = []
     private var cancellables: Set<AnyCancellable> = []
+    #if canImport(AppKit)
+    private var lastExternalApp: NSRunningApplication?
+    private var workspaceObserver: Any?
+    #endif
 
     init(
         repository: ClipboardRepository,
@@ -50,6 +75,9 @@ final class MainWindowViewModel: ObservableObject {
         self.scheduler = scheduler
         self.isPreviewVisible = initialSettings.showPreview
         bind()
+        #if canImport(AppKit)
+        startTrackingFrontmostApplication()
+        #endif
     }
 
     /// Starts monitoring and loads history + settings.
@@ -58,11 +86,18 @@ final class MainWindowViewModel: ObservableObject {
             await self.loadSettingsAndHistory()
         }
         repository.startMonitoring()
+        #if canImport(AppKit)
+        updatePasteTargetApp()
+        #endif
     }
 
     func toggleFavorite(_ item: ClipboardItem) {
         Task {
-            _ = try? await repository.toggleFavorite(id: item.id)
+            do {
+                _ = try await repository.toggleFavorite(id: item.id)
+            } catch {
+                showFooterStatus(FooterStatus(message: error.localizedDescription, kind: .error))
+            }
         }
     }
 
@@ -71,18 +106,39 @@ final class MainWindowViewModel: ObservableObject {
         toggleFavorite(selectedItem)
     }
 
-    func copy(_ item: ClipboardItem, closeAfterPaste: Bool) {
+    func copy(_ item: ClipboardItem, closeAfterPaste: Bool, triggerPaste: Bool = false) {
         Task {
-            try? await repository.copyToClipboard(item)
-            if closeAfterPaste, settings.closeAfterPaste {
-                onCloseRequested?()
+            do {
+                try await repository.copyToClipboard(item)
+                showFooterStatus(FooterStatus(message: "Copied to clipboard", kind: .success))
+                if triggerPaste {
+                    triggerSystemPaste()
+                }
+                if closeAfterPaste || settings.closeAfterPaste {
+                    onCloseRequested?()
+                }
+            } catch {
+                showFooterStatus(FooterStatus(message: error.localizedDescription, kind: .error))
             }
         }
     }
 
-    func copySelected(closeAfterPaste: Bool) {
+    func copySelected(closeAfterPaste: Bool, triggerPaste: Bool = false) {
         guard let selectedItem else { return }
-        copy(selectedItem, closeAfterPaste: closeAfterPaste)
+        copy(selectedItem, closeAfterPaste: closeAfterPaste, triggerPaste: triggerPaste)
+    }
+
+    func paste() {
+        performPasteSequence(closeAfterPaste: true)
+    }
+
+    func pasteKeepOpen() {
+        performPasteSequence(closeAfterPaste: false, respectUserSetting: false)
+    }
+
+    func pasteAsPlainText() {
+        // Content is already plain text; hook for future rich-text stripping.
+        performPasteSequence(closeAfterPaste: true, forcePlainText: true)
     }
 
     func copySelectedAndCloseIfNeeded() {
@@ -110,7 +166,39 @@ final class MainWindowViewModel: ObservableObject {
 
     func clearHistoryRequest() {
         Task {
-            try? await repository.clearHistory()
+            do {
+                try await repository.clearHistory()
+                showFooterStatus(FooterStatus(message: "Cleared history", kind: .warning))
+            } catch {
+                showFooterStatus(FooterStatus(message: error.localizedDescription, kind: .error))
+            }
+        }
+    }
+
+    func delete(_ item: ClipboardItem) {
+        Task {
+            do {
+                try await repository.delete(id: item.id)
+                showFooterStatus(FooterStatus(message: "Deleted entry", kind: .success))
+            } catch {
+                showFooterStatus(FooterStatus(message: error.localizedDescription, kind: .error))
+            }
+        }
+    }
+
+    func deleteSelected() {
+        guard let selectedItem else { return }
+        delete(selectedItem)
+    }
+
+    func clearNonFavorites() {
+        Task {
+            do {
+                try await repository.clearNonFavorites()
+                showFooterStatus(FooterStatus(message: "Cleared non-favorites", kind: .warning))
+            } catch {
+                showFooterStatus(FooterStatus(message: error.localizedDescription, kind: .error))
+            }
         }
     }
 
@@ -120,6 +208,87 @@ final class MainWindowViewModel: ObservableObject {
         Task {
             try? await settingsStore.save(settings)
         }
+    }
+
+    func openActionsOverlay() {
+        // Placeholder hook for a richer actions overlay.
+    }
+
+    func showFooterStatus(_ status: FooterStatus, autoHideAfter seconds: Double = 3) {
+        footerStatus = status
+        let statusID = status.id
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard footerStatus?.id == statusID else { return }
+            footerStatus = nil
+        }
+    }
+    func performPasteSequence(
+        closeAfterPaste: Bool = true,
+        respectUserSetting: Bool = true,
+        forcePlainText: Bool = false
+    ) {
+        guard let item = selectedItem else {
+            showFooterStatus(FooterStatus(message: "Selecione um item para colar", kind: .warning))
+            return
+        }
+
+        Task {
+            let itemToCopy: ClipboardItem
+            if forcePlainText {
+                itemToCopy = ClipboardItem(
+                    id: item.id,
+                    capturedAt: item.capturedAt,
+                    content: item.content,
+                    type: .text,
+                    isFavorite: item.isFavorite,
+                    metadata: item.metadata
+                )
+            } else {
+                itemToCopy = item
+            }
+
+            do {
+                try await repository.copyToClipboard(itemToCopy)
+            } catch {
+                showFooterStatus(FooterStatus(message: error.localizedDescription, kind: .error))
+                return
+            }
+
+            let shouldClose = closeAfterPaste || (respectUserSetting && settings.closeAfterPaste)
+            if shouldClose {
+                onCloseRequested?()
+            }
+
+            #if canImport(AppKit)
+            if let targetApp = lastExternalApp {
+                targetApp.activate(options: [.activateIgnoringOtherApps])
+            }
+            #endif
+
+            // Wait for the previous app to regain focus before sending ⌘V
+            try? await Task.sleep(nanoseconds: 160_000_000)
+            triggerSystemPaste()
+
+            await MainActor.run {
+                showFooterStatus(FooterStatus(message: "Pasted", kind: .success))
+            }
+        }
+    }
+
+    private func triggerSystemPaste() {
+        #if canImport(AppKit)
+        let vKey: CGKeyCode = 9 // 'v'
+        guard let source = CGEventSource(stateID: .hidSystemState) else { return }
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true)
+        keyDown?.flags = .maskCommand
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false)
+        keyUp?.flags = .maskCommand
+
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
+        #endif
     }
 
     // MARK: - Private
@@ -192,4 +361,42 @@ final class MainWindowViewModel: ObservableObject {
         }
         selectedItem = items.first
     }
+
+    #if canImport(AppKit)
+    deinit {
+        if let observer = workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+    }
+
+    private func startTrackingFrontmostApplication() {
+        if let current = NSWorkspace.shared.frontmostApplication,
+           current.bundleIdentifier != Bundle.main.bundleIdentifier {
+            lastExternalApp = current
+        }
+        updatePasteTargetApp()
+
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard
+                let self,
+                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            else { return }
+
+            if app.bundleIdentifier != Bundle.main.bundleIdentifier {
+                self.lastExternalApp = app
+                self.updatePasteTargetApp()
+            }
+        }
+    }
+
+    private func updatePasteTargetApp() {
+        let target = lastExternalApp
+        pasteTargetAppName = target?.localizedName ?? "Current App"
+        pasteTargetAppIcon = target?.icon
+    }
+    #endif
 }

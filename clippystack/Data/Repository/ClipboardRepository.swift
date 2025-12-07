@@ -25,8 +25,14 @@ protocol ClipboardRepository: Sendable {
     /// Toggles favorite and returns the updated item if present.
     func toggleFavorite(id: UUID) async throws -> ClipboardItem?
 
+    /// Deletes a clipboard entry and persists the change.
+    func delete(id: UUID) async throws
+
     /// Removes all history items and persists the change.
     func clearHistory() async throws
+
+    /// Removes non-favorite items and persists the change.
+    func clearNonFavorites() async throws
 
     /// Copies a selected item back to the system clipboard.
     func copyToClipboard(_ item: ClipboardItem) async throws

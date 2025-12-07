@@ -84,6 +84,18 @@ actor ClipboardHistoryStore {
         return (toggled, items)
     }
 
+    func delete(id: UUID, limit: Int) -> [ClipboardItem] {
+        items.removeAll { $0.id == id }
+        items = Self.applyLimit(items, limit: limit)
+        return items
+    }
+
+    func clearNonFavorites(limit: Int) -> [ClipboardItem] {
+        items = items.filter { $0.isFavorite }
+        items = Self.applyLimit(items, limit: limit)
+        return items
+    }
+
     func clear() -> [ClipboardItem] {
         items.removeAll()
         return items
@@ -159,10 +171,22 @@ final class ClipboardRepositoryImpl: ClipboardRepository {
         return updated
     }
 
+    func delete(id: UUID) async throws {
+        let updated = await historyStore.delete(id: id, limit: settings.historyLimit)
+        subject.send(updated)
+        try await persistence.saveHistory(updated, settings: settings)
+    }
+
     func clearHistory() async throws {
         let cleared = await historyStore.clear()
         subject.send(cleared)
         try await persistence.saveHistory(cleared, settings: settings)
+    }
+
+    func clearNonFavorites() async throws {
+        let updated = await historyStore.clearNonFavorites(limit: settings.historyLimit)
+        subject.send(updated)
+        try await persistence.saveHistory(updated, settings: settings)
     }
 
     func copyToClipboard(_ item: ClipboardItem) async throws {
