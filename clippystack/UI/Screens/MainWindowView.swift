@@ -440,8 +440,6 @@ struct MainWindowView: View {
                             snippet: makeSnippet(for: item.content)
                         )
                         .tag(item.id)
-                        .onAppear { visibleListRowIDs.insert(item.id) }
-                        .onDisappear { visibleListRowIDs.remove(item.id) }
                         .id(item.id)
                     }
                 }
@@ -449,16 +447,8 @@ struct MainWindowView: View {
             .onChange(of: selection) { _, id in
                 guard let id else { return }
 
-                let ids = viewModel.displayedItems.map(\.id)
-                let currentIndex = ids.firstIndex(of: id)
-                let previousIndex = lastSelectionIndex
-                let movingDown = (currentIndex != nil && previousIndex != nil) ? (currentIndex! > previousIndex!) : true
-                lastSelectionIndex = currentIndex
-
-                guard !visibleListRowIDs.contains(id) else { return }
-
                 withAnimation(.easeInOut(duration: 0.12)) {
-                    proxy.scrollTo(id, anchor: movingDown ? .bottom : .top)
+                    proxy.scrollTo(id, anchor: nil)
                 }
             }
             .padding(.horizontal, 6)
@@ -901,7 +891,6 @@ private struct ActionsPaletteView: View {
     @Binding var selectedID: ActionMenuItem.Identifier?
     let onSelect: (ActionMenuItem) -> Void
 
-
     private var normalItems: [ActionMenuItem] {
         items.filter { $0.role == .normal }
     }
@@ -913,7 +902,7 @@ private struct ActionsPaletteView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
-                ScrollView {
+                ScrollView(showsIndicators: false) {
                     VStack(spacing: 8) {
                         ForEach(normalItems) { item in
                             ActionRowView(
@@ -940,6 +929,7 @@ private struct ActionsPaletteView: View {
                         }
                     }
                     .padding(10)
+                    .padding(.bottom, 4) 
                 }
                 .onAppear {
                     scrollToSelection(selectedID, in: proxy)
@@ -998,7 +988,7 @@ private struct ActionsPaletteView: View {
 private func scrollToSelection<ID: Hashable>(
     _ selection: ID?,
     in proxy: ScrollViewProxy,
-    anchor: UnitPoint = .center
+    anchor: UnitPoint? = nil
 ) {
     guard let selection else { return }
     withAnimation(.easeInOut(duration: 0.12)) {
