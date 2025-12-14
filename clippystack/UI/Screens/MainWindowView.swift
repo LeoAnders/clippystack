@@ -19,6 +19,7 @@ struct MainWindowView: View {
 
     // Global corner radius for the card/window
     private let windowCornerRadius: CGFloat = 10
+    private let previewAnimation: Animation = .easeInOut(duration: 0.22)
 
     private var filteredActionMenuItems: [ActionMenuItem] {
         viewModel.filteredActionMenuItems(actionsSearchQuery)
@@ -52,7 +53,7 @@ struct MainWindowView: View {
                         },
                         onFilterChange: { viewModel.filterScope = $0 },
                         onSearchChange: { viewModel.searchQuery = $0 },
-                        onTogglePreview: { viewModel.togglePreview() },
+                        onTogglePreview: { togglePreviewAnimated() },
                         isSearchFocused: $isSearchFocused
                     )
                     .frame(
@@ -62,15 +63,8 @@ struct MainWindowView: View {
                     )
 
                     if viewModel.isPreviewVisible {
-                        verticalDivider()
-
-                        PreviewDetailView(
-                            selectedItem: viewModel.selectedItem,
-                            onCopy: { viewModel.copySelected(closeAfterPaste: false) },
-                            onToggleFavorite: { viewModel.toggleFavoriteSelected() },
-                            onTogglePreview: { viewModel.togglePreview() }
-                        )
-                        .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+                        previewSection
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
                 .padding(.horizontal, 12)
@@ -156,6 +150,20 @@ struct MainWindowView: View {
             .frame(maxHeight: .infinity)
     }
 
+    private var previewSection: some View {
+        HStack(spacing: 0) {
+            verticalDivider()
+
+            PreviewDetailView(
+                selectedItem: viewModel.selectedItem,
+                onCopy: { viewModel.copySelected(closeAfterPaste: false) },
+                onToggleFavorite: { viewModel.toggleFavoriteSelected() },
+                onTogglePreview: { togglePreviewAnimated() }
+            )
+            .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
     private func toggleActionsPalette() {
         if isActionsPresented {
             isActionsPresented = false
@@ -212,5 +220,11 @@ struct MainWindowView: View {
               let action = filteredActionMenuItems.first(where: { $0.id == id }) else { return }
         isActionsPresented = false
         action.action()
+    }
+
+    private func togglePreviewAnimated() {
+        withAnimation(previewAnimation) {
+            viewModel.togglePreview()
+        }
     }
 }
