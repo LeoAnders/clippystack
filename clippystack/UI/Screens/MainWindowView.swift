@@ -68,8 +68,7 @@ struct MainWindowView: View {
                             selectedItem: viewModel.selectedItem,
                             onCopy: { viewModel.copySelected(closeAfterPaste: false) },
                             onToggleFavorite: { viewModel.toggleFavoriteSelected() },
-                            onTogglePreview: { viewModel.togglePreview() },
-                            onDelete: { viewModel.deleteSelected() }
+                            onTogglePreview: { viewModel.togglePreview() }
                         )
                         .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
                     }

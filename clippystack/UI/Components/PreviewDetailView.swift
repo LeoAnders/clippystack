@@ -10,7 +10,6 @@ struct PreviewDetailView: View {
     let onCopy: () -> Void
     let onToggleFavorite: () -> Void
     let onTogglePreview: () -> Void
-    let onDelete: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,21 +40,12 @@ struct PreviewDetailView: View {
 
             Spacer()
 
-            HStack(spacing: 10) {
-                Button(action: onTogglePreview) {
-                    Image(systemName: "sidebar.right")
-                        .foregroundColor(.white.opacity(0.8))
-                }
-                .buttonStyle(.borderless)
-                .help("Hide preview")
-
-                Button(action: onDelete) {
-                    Image(systemName: "trash")
-                        .foregroundColor(.red.opacity(0.9))
-                }
-                .buttonStyle(.borderless)
-                .help("Delete item")
+            Button(action: onTogglePreview) {
+                Image(systemName: "sidebar.right")
+                    .foregroundColor(.white.opacity(0.8))
             }
+            .buttonStyle(.borderless)
+            .help("Hide preview")
         }
         .padding(.horizontal, 14)
         .padding(.top, 8)
