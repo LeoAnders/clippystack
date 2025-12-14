@@ -7,7 +7,6 @@
 
 import SwiftUI
 import AppKit
-import AppKit
 
 struct MainWindowView: View {
     @ObservedObject var viewModel: MainWindowViewModel
@@ -16,6 +15,9 @@ struct MainWindowView: View {
     @State private var windowConfigured: Bool = false
     @State private var isActionsPresented: Bool = false
     @State private var actionsSearchQuery: String = ""
+    @State private var highlightedActionID: ActionMenuItem.Identifier?
+    @State private var visibleListRowIDs: Set<UUID> = []
+    @State private var lastSelectionIndex: Int?
 
     private let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -71,18 +73,68 @@ struct MainWindowView: View {
         }
         .background(
             cardShape
-                .fill(.ultraThinMaterial)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.12, green: 0.14, blue: 0.25),
+                            Color(red: 0.17, green: 0.19, blue: 0.32)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            )
+            .overlay(
+                cardShape
+                    .stroke(Color.white.opacity(0.12), lineWidth: 1.1)
         )
         .clipShape(cardShape)
-        .shadow(color: Color.black.opacity(0.28), radius: 20, x: 0, y: 16)
+        .shadow(color: Color.black.opacity(0.36), radius: 24, x: 0, y: 18)
         .frame(minWidth: 780, minHeight: 480)
+        .onChange(of: viewModel.displayedItems.map(\.id)) { _, ids in
+            visibleListRowIDs = visibleListRowIDs.intersection(Set(ids))
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if isActionsPresented {
+                ZStack(alignment: .bottomTrailing) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            isActionsPresented = false
+                        }
+
+                    ActionsPaletteView(
+                        items: filteredActionMenuItems,
+                        searchText: $actionsSearchQuery,
+                        selectedID: $highlightedActionID
+                    ) { item in
+                        isActionsPresented = false
+                        item.action()
+                    }
+                    .padding(.trailing, 18)
+                    .padding(.bottom, 54)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .onAppear {
             viewModel.onAppear()
             isSearchFocused = true
+            normalizeActionSelection()
         }
         .onReceive(viewModel.$selectedItem) { item in
             selection = item?.id
         }
+                .overlay(
+                    KeyEventHandlingView { event in
+                        handleKeyEvent(event)
+                    }
+                    .allowsHitTesting(false)
+                    .frame(width: 0, height: 0)
+                )
+                .onChange(of: actionsSearchQuery) { _, _ in
+                    normalizeActionSelection()
+                }
         .background(WindowConfigurator(configured: $windowConfigured))
     }
 
@@ -118,6 +170,7 @@ struct MainWindowView: View {
 
         return [
             ActionMenuItem(
+                id: .pasteToTargetApp,
                 title: "Paste to \(viewModel.pasteTargetAppName)",
                 icon: "arrow.turn.down.left",
                 appIcon: viewModel.pasteTargetAppIcon,
@@ -127,6 +180,7 @@ struct MainWindowView: View {
                 action: { viewModel.paste() }
             ),
             ActionMenuItem(
+                id: .copyToClipboard,
                 title: "Copy to Clipboard",
                 icon: "doc.on.doc",
                 appIcon: nil,
@@ -136,6 +190,7 @@ struct MainWindowView: View {
                 action: { viewModel.copySelected(closeAfterPaste: false) }
             ),
             ActionMenuItem(
+                id: .pasteKeepOpen,
                 title: "Paste and Keep Window Open",
                 icon: "arrow.triangle.2.circlepath",
                 appIcon: viewModel.pasteTargetAppIcon,
@@ -145,6 +200,7 @@ struct MainWindowView: View {
                 action: { viewModel.pasteKeepOpen() }
             ),
             ActionMenuItem(
+                id: .pasteAsPlainText,
                 title: "Paste as Plain Text",
                 icon: "text.alignleft",
                 appIcon: nil,
@@ -154,6 +210,7 @@ struct MainWindowView: View {
                 action: { viewModel.pasteAsPlainText() }
             ),
             ActionMenuItem(
+                id: .toggleFavorite,
                 title: isFavorite ? "Remove Favorite" : "Add Favorite",
                 icon: isFavorite ? "star.slash" : "star",
                 appIcon: nil,
@@ -163,6 +220,7 @@ struct MainWindowView: View {
                 action: { viewModel.toggleFavoriteSelected() }
             ),
             ActionMenuItem(
+                id: .deleteItem,
                 title: "Delete Item",
                 icon: "trash",
                 appIcon: nil,
@@ -172,6 +230,7 @@ struct MainWindowView: View {
                 action: { viewModel.deleteSelected() }
             ),
             ActionMenuItem(
+                id: .clearAllHistory,
                 title: "Clear All History",
                 icon: "trash.slash",
                 appIcon: nil,
@@ -181,6 +240,7 @@ struct MainWindowView: View {
                 action: { viewModel.clearHistoryRequest() }
             ),
             ActionMenuItem(
+                id: .clearNonFavorites,
                 title: "Clear Non-Favorites",
                 icon: "star.slash",
                 appIcon: nil,
@@ -192,6 +252,12 @@ struct MainWindowView: View {
         ]
     }
 
+    private var filteredActionMenuItems: [ActionMenuItem] {
+        let query = actionsSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return actionMenuItems }
+        return actionMenuItems.filter { $0.title.localizedCaseInsensitiveContains(query) }
+    }
+    
     private func footerBar() -> some View {
         let status = viewModel.footerStatus
 
@@ -218,22 +284,7 @@ struct MainWindowView: View {
                 appIcon: nil,
                 hintKeys: ["⌃", "K"]
             ) {
-                if isActionsPresented {
-                    isActionsPresented = false
-                } else {
-                    actionsSearchQuery = ""
-                    isActionsPresented = true
-                }
-            }
-            .popover(isPresented: $isActionsPresented, arrowEdge: .top) {
-                ActionsPaletteView(
-                    items: actionMenuItems,
-                    searchText: $actionsSearchQuery
-                ) { item in
-                    isActionsPresented = false
-                    item.action()
-                }
-                .padding(8)
+                toggleActionsPalette()
             }
             .keyboardShortcut("k", modifiers: [.control])
         }
@@ -243,7 +294,7 @@ struct MainWindowView: View {
         .background(
             ZStack(alignment: .top) {
                 Rectangle()
-                    .fill(.ultraThinMaterial)
+                    .fill(Color.white.opacity(0.06))
 
                 footerTint(for: status)
                     .blendMode(.plusLighter)
@@ -359,28 +410,55 @@ struct MainWindowView: View {
 
     @ViewBuilder
     private func leftPanel() -> some View {
-        ScrollView(showsIndicators: false) {
-            LazyVStack(spacing: 10) {
-                ForEach(Array(viewModel.displayedItems.enumerated()), id: \.element.id) { _, item in
-                    listRow(item: item)
-                        .tag(item.id)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selection = item.id
-                            viewModel.selectedItem = item
-                        }
-                        .contextMenu {
-                            Button("Copy") {
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 4) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.04))
+                        .frame(height: 1)
+                        .opacity(0.35)
+
+                    ForEach(Array(viewModel.displayedItems.enumerated()), id: \.element.id) { _, item in
+                        ClipboardListRow(
+                            item: item,
+                            isSelected: selection == item.id,
+                            onSelect: {
+                                selection = item.id
+                                viewModel.selectedItem = item
+                            },
+                            onToggleFavorite: {
+                                viewModel.toggleFavorite(item)
+                            },
+                            onCopy: {
                                 viewModel.selectedItem = item
                                 viewModel.copy(item, closeAfterPaste: false)
-                            }
-                            Button(item.isFavorite ? "Remove favorite" : "Add favorite") {
-                                viewModel.toggleFavorite(item)
-                            }
-                            Button("Delete") {
+                            },
+                            onDelete: {
                                 viewModel.delete(item)
-                            }
-                        }
+                            },
+                            iconName: icon(for: item.type),
+                            snippet: makeSnippet(for: item.content)
+                        )
+                        .tag(item.id)
+                        .onAppear { visibleListRowIDs.insert(item.id) }
+                        .onDisappear { visibleListRowIDs.remove(item.id) }
+                        .id(item.id)
+                    }
+                }
+            }
+            .onChange(of: selection) { _, id in
+                guard let id else { return }
+
+                let ids = viewModel.displayedItems.map(\.id)
+                let currentIndex = ids.firstIndex(of: id)
+                let previousIndex = lastSelectionIndex
+                let movingDown = (currentIndex != nil && previousIndex != nil) ? (currentIndex! > previousIndex!) : true
+                lastSelectionIndex = currentIndex
+
+                guard !visibleListRowIDs.contains(id) else { return }
+
+                withAnimation(.easeInOut(duration: 0.12)) {
+                    proxy.scrollTo(id, anchor: movingDown ? .bottom : .top)
                 }
             }
             .padding(.horizontal, 6)
@@ -389,49 +467,53 @@ struct MainWindowView: View {
         .background(Color.clear)
     }
 
-    private func listRow(item: ClipboardItem) -> some View {
-        let isSelected = selection == item.id
-        let typeIcon = icon(for: item.type)
+    private struct ClipboardListRow: View {
+        let item: ClipboardItem
+        let isSelected: Bool
+        let onSelect: () -> Void
+        let onToggleFavorite: () -> Void
+        let onCopy: () -> Void
+        let onDelete: () -> Void
+        let iconName: String
+        let snippet: String
 
-        return HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.06))
-                Image(systemName: typeIcon)
-                    .foregroundColor(.white.opacity(isSelected ? 0.95 : 0.75))
-                    .font(.system(size: 14, weight: .semibold))
+        var body: some View {
+            SelectableRowContainer(isSelected: isSelected, isEnabled: true, horizontalPadding: 10, verticalPadding: 6) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                        Image(systemName: iconName)
+                            .foregroundColor(.white.opacity(isSelected ? 0.95 : 0.78))
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .frame(width: 36, height: 36)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(snippet)
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.96))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+
+                    Spacer()
+
+                    Button(action: onToggleFavorite) {
+                        Image(systemName: item.isFavorite ? "star.fill" : "star")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(item.isFavorite ? .yellow : .white.opacity(0.45))
+                    }
+                    .buttonStyle(.borderless)
+                }
             }
-            .frame(width: 36, height: 36)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(makeSnippet(for: item.content))
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.96))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            .onTapGesture { onSelect() }
+            .contextMenu {
+                Button("Copy") { onCopy() }
+                Button(item.isFavorite ? "Remove favorite" : "Add favorite") { onToggleFavorite() }
+                Button("Delete") { onDelete() }
             }
-
-            Spacer()
-
-            Button {
-                viewModel.toggleFavorite(item)
-            } label: {
-                Image(systemName: item.isFavorite ? "star.fill" : "star")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(item.isFavorite ? .yellow : .white.opacity(0.45))
-            }
-            .buttonStyle(.borderless)
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isSelected ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(isSelected ? Color.white.opacity(0.18) : Color.clear, lineWidth: 1)
-                )
-        )
     }
 
     // MARK: - Right Panel (Preview + bottom info)
@@ -501,6 +583,69 @@ struct MainWindowView: View {
         }
     }
 
+    private func toggleActionsPalette() {
+        if isActionsPresented {
+            isActionsPresented = false
+        } else {
+            actionsSearchQuery = ""
+            resetActionSelection()
+            isActionsPresented = true
+        }
+    }
+
+    private func normalizeActionSelection() {
+        let items = filteredActionMenuItems
+        if let highlightedActionID, items.contains(where: { $0.id == highlightedActionID }) {
+            return
+        }
+        highlightedActionID = items.first?.id
+    }
+
+    private func resetActionSelection() {
+        highlightedActionID = filteredActionMenuItems.first?.id
+    }
+
+    private func handleKeyEvent(_ event: NSEvent) {
+        switch event.keyCode {
+        case 125: // Down arrow
+            if isActionsPresented {
+                moveActionSelection(offset: 1)
+            } else {
+                viewModel.selectNext()
+            }
+        case 126: // Up arrow
+            if isActionsPresented {
+                moveActionSelection(offset: -1)
+            } else {
+                viewModel.selectPrevious()
+            }
+        case 36: // Return
+            if isActionsPresented, let id = highlightedActionID,
+               let action = filteredActionMenuItems.first(where: { $0.id == id }) {
+                isActionsPresented = false
+                action.action()
+            }
+        case 53: // Escape
+            if isActionsPresented {
+                isActionsPresented = false
+            }
+        default:
+            break
+        }
+    }
+
+    private func moveActionSelection(offset: Int) {
+        let items = filteredActionMenuItems
+        guard !items.isEmpty else { return }
+        guard let currentIndex = items.firstIndex(where: { $0.id == highlightedActionID }) else {
+            highlightedActionID = items.first?.id
+            return
+        }
+        let newIndex = max(items.startIndex, min(items.endIndex - 1, currentIndex + offset))
+        highlightedActionID = items[newIndex].id
+    }
+
+        
     private func icon(for type: ClipboardContentType) -> String {
         switch type {
         case .text:
@@ -554,7 +699,7 @@ private struct UnifiedSearchField: View {
                 .frame(width: 1, height: 20)
 
             Menu {
-                ForEach(ClipboardFilterScope.allCases) { option in
+                ForEach(ClipboardFilterScope.allCases, id: \.self) { option in
                     Button {
                         scope = option
                     } label: {
@@ -683,12 +828,23 @@ private struct FooterControlButton: View {
 }
 
 private struct ActionMenuItem: Identifiable {
+    enum Identifier: String {
+        case pasteToTargetApp
+        case copyToClipboard
+        case pasteKeepOpen
+        case pasteAsPlainText
+        case toggleFavorite
+        case deleteItem
+        case clearAllHistory
+        case clearNonFavorites
+    }
+
     enum Role {
         case normal
         case destructive
     }
 
-    let id = UUID()
+    let id: Identifier
     let title: String
     let icon: String
     let appIcon: NSImage?
@@ -698,45 +854,102 @@ private struct ActionMenuItem: Identifiable {
     let action: () -> Void
 }
 
+/// Shared selectable row container to unify hover/selection styling across lists and menus.
+private struct SelectableRowContainer<Content: View>: View {
+    let isSelected: Bool
+    let isEnabled: Bool
+    let horizontalPadding: CGFloat
+    let verticalPadding: CGFloat
+    @ViewBuilder var content: () -> Content
+
+    @State private var isHovering: Bool = false
+
+    private var backgroundFill: Color {
+        if isSelected { return Color.white.opacity(0.12) }
+        if isHovering { return Color.white.opacity(0.06) }
+        return Color.clear
+    }
+
+    private var strokeColor: Color {
+        if isSelected { return Color.white.opacity(0.26) }
+        if isHovering { return Color.white.opacity(0.14) }
+        return Color.clear
+    }
+
+    var body: some View {
+        content()
+            .padding(.horizontal, horizontalPadding)
+            .padding(.vertical, verticalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(backgroundFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(strokeColor, lineWidth: isSelected ? 1.2 : 1)
+            )
+            .contentShape(Rectangle())
+            .onHover { isHovering = $0 }
+            .opacity(isEnabled ? 1 : 0.35)
+    }
+}
+
 private struct ActionsPaletteView: View {
     let items: [ActionMenuItem]
     @Binding var searchText: String
+    @Binding var selectedID: ActionMenuItem.Identifier?
     let onSelect: (ActionMenuItem) -> Void
 
-    private var filteredItems: [ActionMenuItem] {
-        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return items
-        }
-        return items.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
 
     private var normalItems: [ActionMenuItem] {
-        filteredItems.filter { $0.role == .normal }
+        items.filter { $0.role == .normal }
     }
 
     private var destructiveItems: [ActionMenuItem] {
-        filteredItems.filter { $0.role == .destructive }
+        items.filter { $0.role == .destructive }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(normalItems) { item in
-                        ActionRowView(item: item, onSelect: onSelect)
-                    }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(normalItems) { item in
+                            ActionRowView(
+                                item: item,
+                                isSelected: selectedID == item.id,
+                                onSelect: onSelect
+                            )
+                            .id(item.id)
+                        }
 
-                    if !destructiveItems.isEmpty && !normalItems.isEmpty {
-                        Divider()
-                            .overlay(Color.white.opacity(0.16))
-                            .padding(.horizontal, 6)
-                    }
+                        if !destructiveItems.isEmpty && !normalItems.isEmpty {
+                            Divider()
+                                .overlay(Color.white.opacity(0.16))
+                                .padding(.horizontal, 6)
+                        }
 
-                    ForEach(destructiveItems) { item in
-                        ActionRowView(item: item, onSelect: onSelect)
+                        ForEach(destructiveItems) { item in
+                            ActionRowView(
+                                item: item,
+                                isSelected: selectedID == item.id,
+                                onSelect: onSelect
+                            )
+                            .id(item.id)
+                        }
                     }
+                    .padding(10)
                 }
-                .padding(10)
+                .onAppear {
+                    scrollToSelection(selectedID, in: proxy)
+                }
+                .onChange(of: selectedID) { _, newValue in
+                    scrollToSelection(newValue, in: proxy)
+                }
+                .onChange(of: items.map(\.id)) { _, _ in
+                    scrollToSelection(selectedID, in: proxy)
+                }
             }
 
             ActionSearchField(text: $searchText)
@@ -750,22 +963,54 @@ private struct ActionsPaletteView: View {
         .frame(maxHeight: 320)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .shadow(color: Color.black.opacity(0.35), radius: 22, x: 0, y: 18)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.16, green: 0.18, blue: 0.30),
+                            Color(red: 0.20, green: 0.22, blue: 0.36)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .shadow(color: Color.black.opacity(0.30), radius: 20, x: 0, y: 14)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                .stroke(Color.white.opacity(0.22), lineWidth: 1.1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onAppear {
+            if selectedID == nil {
+                selectedID = items.first?.id
+            }
+        }
+        .onChange(of: items.map(\.id)) { _, _ in
+            if let selectedID, items.contains(where: { $0.id == selectedID }) {
+                return
+            }
+            selectedID = items.first?.id
+        }
+    }
+}
+
+/// Shared helper to keep a selected row visible inside scrollable palettes/lists.
+private func scrollToSelection<ID: Hashable>(
+    _ selection: ID?,
+    in proxy: ScrollViewProxy,
+    anchor: UnitPoint = .center
+) {
+    guard let selection else { return }
+    withAnimation(.easeInOut(duration: 0.12)) {
+        proxy.scrollTo(selection, anchor: anchor)
     }
 }
 
 private struct ActionRowView: View {
     let item: ActionMenuItem
+    let isSelected: Bool
     let onSelect: (ActionMenuItem) -> Void
 
-    @State private var isHovering: Bool = false
     @Environment(\.isEnabled) private var isEnabled
 
     private var iconBackground: Color {
@@ -784,52 +1029,40 @@ private struct ActionRowView: View {
         Button {
             onSelect(item)
         } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(iconBackground)
-                    if let nsImage = item.appIcon {
-                        Image(nsImage: nsImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 16, height: 16)
-                            .cornerRadius(4)
-                    } else {
-                        Image(systemName: item.icon)
-                            .foregroundColor(iconColor)
-                            .font(.system(size: 13, weight: .semibold))
+            SelectableRowContainer(isSelected: isSelected, isEnabled: isEnabled, horizontalPadding: 9, verticalPadding: 8) {
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(iconBackground)
+                        if let nsImage = item.appIcon {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 16, height: 16)
+                                .cornerRadius(4)
+                        } else {
+                            Image(systemName: item.icon)
+                                .foregroundColor(iconColor)
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                    }
+                    .frame(width: 32, height: 32)
+
+                    Text(item.title)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(item.role == .destructive ? iconColor : .white.opacity(0.92))
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    if !item.shortcutKeys.isEmpty {
+                        KeyHintCaps(keys: item.shortcutKeys)
                     }
                 }
-                .frame(width: 32, height: 32)
-
-                Text(item.title)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundColor(item.role == .destructive ? iconColor : .white.opacity(0.92))
-                    .lineLimit(1)
-
-                Spacer()
-
-                if !item.shortcutKeys.isEmpty {
-                    KeyHintCaps(keys: item.shortcutKeys)
-                }
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(isHovering ? Color.white.opacity(0.10) : Color.clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(isHovering ? Color.white.opacity(0.18) : Color.clear, lineWidth: 1)
-        )
-        .onHover { hovering in
-            isHovering = hovering
-        }
         .disabled(!item.isEnabled)
         .opacity(isEnabled ? 1 : 0.35)
     }
@@ -854,11 +1087,46 @@ private struct ActionSearchField: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.06))
+                .fill(Color.white.opacity(0.10))
         )
     }
 }
 
+#if canImport(AppKit)
+private struct KeyEventHandlingView: NSViewRepresentable {
+    let onKeyDown: (NSEvent) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = KeyCatcherView()
+        view.onKeyDown = onKeyDown
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private final class KeyCatcherView: NSView {
+    var onKeyDown: ((NSEvent) -> Void)?
+    private var monitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.onKeyDown?(event)
+            return event
+        }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+}
+#endif
+    
 private extension ClipboardFilterScope {
     var title: String {
         switch self {
