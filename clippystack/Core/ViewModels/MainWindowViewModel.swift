@@ -80,6 +80,101 @@ final class MainWindowViewModel: ObservableObject {
         #endif
     }
 
+    var actionMenuItems: [ActionMenuItem] {
+        let hasSelection = selectedItem != nil
+        let isFavorite = selectedItem?.isFavorite ?? false
+        let hasHistory = !displayedItems.isEmpty
+
+        return [
+            ActionMenuItem(
+                id: .pasteToTargetApp,
+                title: "Paste to \(pasteTargetAppName)",
+                icon: "arrow.turn.down.left",
+                appIcon: pasteTargetAppIcon,
+                shortcutKeys: ["↩︎"],
+                role: .normal,
+                isEnabled: hasSelection,
+                action: { [weak self] in self?.paste() }
+            ),
+            ActionMenuItem(
+                id: .copyToClipboard,
+                title: "Copy to Clipboard",
+                icon: "doc.on.doc",
+                appIcon: nil,
+                shortcutKeys: ["⌘", "C"],
+                role: .normal,
+                isEnabled: hasSelection,
+                action: { [weak self] in self?.copySelected(closeAfterPaste: false) }
+            ),
+            ActionMenuItem(
+                id: .pasteKeepOpen,
+                title: "Paste and Keep Window Open",
+                icon: "arrow.triangle.2.circlepath",
+                appIcon: pasteTargetAppIcon,
+                shortcutKeys: ["⌃", "⇧", "↩︎"],
+                role: .normal,
+                isEnabled: hasSelection,
+                action: { [weak self] in self?.pasteKeepOpen() }
+            ),
+            ActionMenuItem(
+                id: .pasteAsPlainText,
+                title: "Paste as Plain Text",
+                icon: "text.alignleft",
+                appIcon: nil,
+                shortcutKeys: ["⌥", "⇧", "↩︎"],
+                role: .normal,
+                isEnabled: hasSelection,
+                action: { [weak self] in self?.pasteAsPlainText() }
+            ),
+            ActionMenuItem(
+                id: .toggleFavorite,
+                title: isFavorite ? "Remove Favorite" : "Add Favorite",
+                icon: isFavorite ? "star.slash" : "star",
+                appIcon: nil,
+                shortcutKeys: ["⌘", "D"],
+                role: .normal,
+                isEnabled: hasSelection,
+                action: { [weak self] in self?.toggleFavoriteSelected() }
+            ),
+            ActionMenuItem(
+                id: .deleteItem,
+                title: "Delete Item",
+                icon: "trash",
+                appIcon: nil,
+                shortcutKeys: ["⌘", "⌫"],
+                role: .destructive,
+                isEnabled: hasSelection,
+                action: { [weak self] in self?.deleteSelected() }
+            ),
+            ActionMenuItem(
+                id: .clearAllHistory,
+                title: "Clear All History",
+                icon: "trash.slash",
+                appIcon: nil,
+                shortcutKeys: ["⌘", "⇧", "⌫"],
+                role: .destructive,
+                isEnabled: hasHistory,
+                action: { [weak self] in self?.clearHistoryRequest() }
+            ),
+            ActionMenuItem(
+                id: .clearNonFavorites,
+                title: "Clear Non-Favorites",
+                icon: "star.slash",
+                appIcon: nil,
+                shortcutKeys: ["⌘", "⌥", "⌫"],
+                role: .destructive,
+                isEnabled: hasHistory,
+                action: { [weak self] in self?.clearNonFavorites() }
+            )
+        ]
+    }
+
+    func filteredActionMenuItems(_ query: String) -> [ActionMenuItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return actionMenuItems }
+        return actionMenuItems.filter { $0.title.localizedCaseInsensitiveContains(trimmed) }
+    }
+
     /// Starts monitoring and loads history + settings.
     func onAppear() {
         Task {

@@ -43,7 +43,7 @@ struct KeyboardShortcutDescriptor: Codable, Sendable, Equatable {
     }
 }
 
-enum KeyboardShortcutModifier: String, Codable, Sendable {
+enum KeyboardShortcutModifier: String, Codable, Sendable, Equatable {
     case command
     case option
     case control
